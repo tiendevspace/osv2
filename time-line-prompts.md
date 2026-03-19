@@ -81,6 +81,8 @@ Rules:
 
 Explain what the OpenSearch client is doing under the hood when it connects,
 and why we isolate it in an adapter rather than using it directly everywhere.
+
+Create a new file called DOCUMENTATION.md and include your explanation in the file. Keep it updated each time you make changes to the codes
 ```
 
 ---

@@ -1,0 +1,94 @@
+services:
+  opensearch-node:
+    image: public.ecr.aws/opensearchproject/opensearch:latest
+    container_name: opensearch-node
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-Admin_1234!}
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    networks:
+      - opensearch-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf https://localhost:9200/_cluster/health -u admin:${OPENSEARCH_ADMIN_PASSWORD:-Admin_1234!} --insecure || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  opensearch-dashboards:
+    image: public.ecr.aws/opensearchproject/opensearch-dashboards:latest
+    container_name: opensearch-dashboards
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5601:5601"
+    environment:
+      OPENSEARCH_HOSTS: '["https://opensearch-node:9200"]'
+    networks:
+      - opensearch-net
+    depends_on:
+      opensearch-node:
+        condition: service_healthy
+
+  search-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: search-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - OPENSEARCH_URL=https://opensearch-node:9200
+      - OPENSEARCH_USERNAME=admin
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-Admin_1234!}
+    volumes:
+      - crawl-logs:/app/crawl-logs
+    networks:
+      - opensearch-net
+    depends_on:
+      opensearch-node:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - opensearch-net
+    depends_on:
+      search-api:
+        condition: service_healthy
+
+networks:
+  opensearch-net:
+    driver: bridge
+
+volumes:
+  opensearch-data:
+  crawl-logs:
+  caddy-data:
+  caddy-config:

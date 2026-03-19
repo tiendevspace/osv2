@@ -1,0 +1,38 @@
+# * docker-compose.yml
+# * This file acts as the 'Conductor' for our search engine,
+# * ensuring the Node and the Dashboard talk to each other correctly.
+ 
+services:
+  opensearch-node:
+    # We use the AWS ECR image here
+    image: public.ecr.aws/opensearchproject/opensearch:latest
+    container_name: opensearch-node
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true # Set to true for local development
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m" # Heap size limit for WSL2 stability
+    ports:
+      - "9200:9200" # REST API (Where your crawler sends data)
+      - "9600:9600" # Performance Analyzer
+    volumes:
+      # PERSISTENCE: Maps the Linux folder to the container
+      - ./storage/opensearch:/usr/share/opensearch/data
+    networks:
+      - opensearch-net
+
+  opensearch-dashboards:
+    image: public.ecr.aws/opensearchproject/opensearch-dashboards:latest
+    container_name: opensearch-dashboards
+    ports:
+      - "5601:5601" # Access via http://localhost:5601
+    environment:
+      # We tell Dashboards to talk to the node over the internal Docker network
+      OPENSEARCH_HOSTS: '["http://opensearch-node:9200"]'
+    networks:
+      - opensearch-net
+    depends_on:
+      - opensearch-node
+
+networks:
+  opensearch-net:
+    driver: bridge

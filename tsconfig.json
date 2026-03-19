@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    // --- Language & emit target ---
+    "target": "ES2022",          // Compile down to ES2022; keeps async/await, class fields, etc. native
+    "module": "NodeNext",        // Use Node's native ESM resolution (honours package.json "exports" and .mjs/.cjs extensions)
+    "moduleResolution": "NodeNext", // Pair with module:NodeNext — required for correct import specifier resolution
+
+    // --- Output ---
+    "outDir": "dist",            // Compiled JS lands in dist/, keeping src/ clean
+    "declaration": true,         // Emit .d.ts files so the library is consumable by other TS projects
+    "sourceMap": true,           // Emit .map files so stack traces point to .ts sources, not compiled JS
+
+    // --- Strict mode (all flags below are enabled by "strict": true) ---
+    "strict": true,              // Master switch: enables all strict* flags below
+    // "noImplicitAny": true,    // (included in strict) Errors on implicit `any` — forces explicit types
+    // "strictNullChecks": true, // (included in strict) null/undefined are not assignable to other types
+    // "strictFunctionTypes": true, // (included in strict) Stricter checking of function parameter types
+    // "strictBindCallApply": true, // (included in strict) Type-checks bind/call/apply arguments
+    // "strictPropertyInitialization": true, // (included in strict) Class properties must be initialised in the constructor
+
+    // --- Extra safety ---
+    "noUncheckedIndexedAccess": true, // arr[0] has type T | undefined, not T — prevents silent out-of-bounds
+    "noImplicitOverride": true,       // Subclass methods that override a base must use the `override` keyword
+    "exactOptionalPropertyTypes": true, // Distinguishes `{a?: string}` (absent) from `{a: string | undefined}` (present but undefined)
+
+    // --- Module interop ---
+    "esModuleInterop": true,     // Allows `import fs from 'fs'` instead of `import * as fs from 'fs'`
+    "forceConsistentCasingInFileNames": true, // Prevents issues on case-insensitive file systems (macOS/Windows)
+    "resolveJsonModule": true,   // Allows `import pkg from '../package.json'` with full type inference
+
+    // --- Misc ---
+    "skipLibCheck": true         // Skip type-checking of .d.ts files in node_modules — faster builds
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

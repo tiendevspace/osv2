@@ -1,0 +1,55 @@
+# ----------------------------------------------------------------------
+# 🚰 THE MUNICIPAL UTILITIES (Dependencies)
+# ----------------------------------------------------------------------
+# We never track the heavy machinery. Your package.json is the blueprint, 
+# and running 'npm install' builds this folder wherever it is needed.
+node_modules/
+
+# ----------------------------------------------------------------------
+# 🏭 THE FACTORY OUTPUT (Compiled Code)
+# ----------------------------------------------------------------------
+# Remember setting "outDir": "./dist" in your strict tsconfig.json? 
+# We only track your pristine TypeScript source code. The compiled Node16 
+# JavaScript in the dist folder is generated on the fly during the build.
+dist/
+build/
+
+# ----------------------------------------------------------------------
+# 🔐 SECRETS & ENVIRONMENT (Keys & Passwords)
+# ----------------------------------------------------------------------
+# For when you eventually swap 'localhost:9200' for a production OpenSearch 
+# cluster and need to store the credentials locally.
+.env
+.env.local
+.env.*.local
+
+# ----------------------------------------------------------------------
+# 💻 OPERATING SYSTEM ARTIFACTS
+# ----------------------------------------------------------------------
+# Keeps those pesky hidden Mac/Linux indexing files out of your repository.
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# ----------------------------------------------------------------------
+# 📝 LOGS & DEBUGGING
+# ----------------------------------------------------------------------
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+crawl-logs/
+.crawl-progress/
+.sync-logs/
+*.log
+
+# ----------------------------------------------------------------------
+# 🗄️ LOCAL DATABASE STATE (Volumes & Storage)
+# ----------------------------------------------------------------------
+# We only track the blueprints (TypeScript) and the factory machinery (Docker Compose).
+# We NEVER track the actual physical inventory or database shards.
+storage/
+data/
+opensearch-data/
