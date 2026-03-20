@@ -5,6 +5,12 @@
 export interface Tenant {
   id: string;
   name: string;
+  sourceUrl: string;
+  indexName: string;
+  fieldWeights?: {
+    title?: number;
+    body?: number;
+  };
 }
 
 export interface PageMetadata {

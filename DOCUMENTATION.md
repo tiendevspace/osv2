@@ -11,6 +11,8 @@ osv2/
 │   │   ├── opensearch.ts     ← OpenSearch client and response types
 │   │   ├── queries.ts        ← Query shape types
 │   │   └── domains.ts        ← Domain/business types (Tenant, Document, etc.)
+│   ├── config/
+│   │   └── tenants.ts        ← Tenant registry: hardcoded tenants + getTenant / getAllTenants
 │   ├── queries/              ← Query builder functions
 │   ├── adapters/             ← OpenSearch client wrappers
 │   │   ├── client.ts         ← Singleton client, env validation, testConnection()
@@ -150,10 +152,11 @@ services/  →  adapters/  →  @opensearch-project/opensearch
 | `src/types/opensearch.ts` | `OpenSearchClient` type alias; `ClusterHealthResponse` interface |
 | `src/types/queries.ts` | Internal query shape types: `KeywordQuery` |
 | `src/types/domains.ts` | Business/domain types: `Tenant`, `Document`, `SearchResult`, `RawPage` |
+| `src/config/tenants.ts` | Tenant registry: hardcoded `Tenant` array, `getTenant(id)`, `getAllTenants()` |
 | `src/adapters/client.ts` | Singleton client construction, env validation, `testConnection()` |
-| `src/adapters/indexManager.ts` | Index lifecycle: `createTenantIndex()`, `indexExists()` |
-| `src/adapters/ingest.ts` | Document ingestion: `indexDocument()`, `bulkIndexDocuments()` |
-| `src/adapters/search.ts` | Keyword search: `keywordSearch()` |
+| `src/adapters/indexManager.ts` | Index lifecycle: `createTenantIndex()`, `indexExists()` — all accept `Tenant` |
+| `src/adapters/ingest.ts` | Document ingestion: `indexDocument()`, `bulkIndexDocuments()` — all accept `Tenant` |
+| `src/adapters/search.ts` | Search: `keywordSearch()` and friends — all accept `Tenant` |
 | `src/queries/keyword.ts` | Query builder: `buildKeywordQuery()` |
 | `src/queries/phrase.ts` | Query builder: `buildPhraseQuery()` |
 | `src/queries/prefix.ts` | Query builder: `buildPrefixQuery()` |
@@ -181,6 +184,18 @@ services/  →  adapters/  →  @opensearch-project/opensearch
 | `OPENSEARCH_USERNAME` | HTTP Basic Auth username | `admin` |
 | `OPENSEARCH_PASSWORD` | HTTP Basic Auth password | `changeme` |
 | `OPENSEARCH_REJECT_UNAUTHORIZED` | Set to `false` to disable TLS cert verification (dev only) | `false` |
+
+---
+
+## Tenant configuration (`src/config/tenants.ts`)
+
+All tenants are declared in a single registry file rather than being derived from user input or inferred from index names at runtime. This means:
+
+- The URL to crawl is co-located with the tenant ID — no need to ask for it at the CLI prompt.
+- Per-tenant BM25 field boosts (`fieldWeights`) can be declared alongside the tenant without touching any adapter code.
+- `getTenant(id)` is the single lookup point; callers never construct index names themselves.
+
+Every adapter that previously accepted a `tenantId: string` and computed `tenant_${id}_documents` internally now accepts a `Tenant` object and reads `tenant.indexName` directly. This removes three duplicated `indexName()` helpers (one each in `indexManager.ts`, `search.ts`, `ingest.ts`).
 
 ---
 
@@ -216,6 +231,19 @@ Raw crawler output. Core fields plus an optional `metadata?: PageMetadata` sub-o
 | `body` | `string` | Concatenated `<p>` text |
 | `crawled_at` | `string` | ISO 8601 timestamp set at crawl time |
 | `metadata?` | `PageMetadata` | Optional sub-object of all extracted metadata |
+
+### `Tenant`
+
+Defines one logical tenant. All fields are used by at least one adapter or service layer.
+
+| Field | Type | Purpose |
+|---|---|---|
+| `id` | `string` | Short, URL-safe identifier (e.g. `anthropic`) |
+| `name` | `string` | Human-readable display name |
+| `sourceUrl` | `string` | Root URL passed to the crawler for ingest |
+| `indexName` | `string` | OpenSearch index name — derived as `tenant_{id}_documents` |
+| `fieldWeights?.title` | `number` | Optional BM25 boost for the `title` field |
+| `fieldWeights?.body` | `number` | Optional BM25 boost for the `body` field |
 
 ### `Document`
 
@@ -298,8 +326,9 @@ Two exported functions manage the lifecycle of a tenant's index:
 
 | Function | Behaviour |
 |---|---|
-| `indexExists(tenantId)` | `HEAD /{index}` — returns `true` if the index exists (HTTP 200), `false` otherwise (HTTP 404) |
-| `createTenantIndex(tenantId)` | Checks existence first; creates the index with explicit mappings and settings if absent; logs and returns early if already present |
+| `indexExists(tenant)` | `HEAD /{index}` — returns `true` if the index exists (HTTP 200), `false` otherwise (HTTP 404) |
+| `createTenantIndex(tenant)` | Checks existence first; creates the index with explicit mappings and settings if absent; logs and returns early if already present |
+| `deleteTenantIndex(tenant)` | Deletes the index; no-ops if absent |
 
 The guard in `createTenantIndex` makes the function **idempotent** — safe to call on every startup without failing or duplicating the index.
 
@@ -365,8 +394,9 @@ Two exported functions handle writing documents into an index:
 
 | Function | Behaviour |
 |---|---|
-| `indexDocument(tenantId, doc)` | `PUT /{index}/{id}` — indexes a single document, deriving its ID from the URL |
-| `bulkIndexDocuments(tenantId, docs)` | `POST /_bulk` — sends all documents in one request; logs succeeded/failed counts |
+| `indexDocument(tenant, doc)` | `PUT /{index}/{id}` — indexes a single document, deriving its ID from the URL |
+| `deleteDocument(tenant, url)` | `DELETE /{index}/{id}` — removes a single document by URL |
+| `bulkIndexDocuments(tenant, docs)` | `POST /_bulk` — sends all documents in one request; logs succeeded/failed counts |
 
 ### Document IDs in OpenSearch
 

@@ -5,11 +5,7 @@ import { buildPrefixQuery } from "../queries/prefix.js";
 import { buildWildcardQuery } from "../queries/wildcard.js";
 import { buildFuzzyQuery } from "../queries/fuzzy.js";
 import { buildQueryStringQuery } from "../queries/queryString.js";
-import type { SearchResult } from "../types/domains.js";
-
-function indexName(tenantId: string): string {
-  return `tenant_${tenantId}_documents`;
-}
+import type { SearchResult, Tenant } from "../types/domains.js";
 
 interface SearchHit {
   _id: string;
@@ -31,11 +27,11 @@ interface SearchResponse {
 }
 
 async function executeSearch(
-  tenantId: string,
+  tenant: Tenant,
   query: object,
 ): Promise<SearchResult[]> {
   const response = await client.search({
-    index: indexName(tenantId),
+    index: tenant.indexName,
     body: query,
   });
 
@@ -56,49 +52,49 @@ async function executeSearch(
 }
 
 export async function keywordSearch(
-  tenantId: string,
+  tenant: Tenant,
   searchTerm: string,
 ): Promise<SearchResult[]> {
-  return executeSearch(tenantId, buildKeywordQuery(searchTerm));
+  return executeSearch(tenant, buildKeywordQuery(searchTerm));
 }
 
 export async function phraseSearch(
-  tenantId: string,
+  tenant: Tenant,
   field: string,
   phrase: string,
 ): Promise<SearchResult[]> {
-  return executeSearch(tenantId, buildPhraseQuery(field, phrase));
+  return executeSearch(tenant, buildPhraseQuery(field, phrase));
 }
 
 export async function prefixSearch(
-  tenantId: string,
+  tenant: Tenant,
   field: string,
   prefix: string,
 ): Promise<SearchResult[]> {
-  return executeSearch(tenantId, buildPrefixQuery(field, prefix));
+  return executeSearch(tenant, buildPrefixQuery(field, prefix));
 }
 
 export async function wildcardSearch(
-  tenantId: string,
+  tenant: Tenant,
   field: string,
   pattern: string,
 ): Promise<SearchResult[]> {
-  return executeSearch(tenantId, buildWildcardQuery(field, pattern));
+  return executeSearch(tenant, buildWildcardQuery(field, pattern));
 }
 
 export async function fuzzySearch(
-  tenantId: string,
+  tenant: Tenant,
   field: string,
   term: string,
   fuzziness?: string,
 ): Promise<SearchResult[]> {
-  return executeSearch(tenantId, buildFuzzyQuery(field, term, fuzziness));
+  return executeSearch(tenant, buildFuzzyQuery(field, term, fuzziness));
 }
 
 export async function queryStringSearch(
-  tenantId: string,
+  tenant: Tenant,
   query: string,
   fields: string[],
 ): Promise<SearchResult[]> {
-  return executeSearch(tenantId, buildQueryStringQuery(query, fields));
+  return executeSearch(tenant, buildQueryStringQuery(query, fields));
 }

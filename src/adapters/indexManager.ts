@@ -1,24 +1,19 @@
 import { client } from "./client.js";
+import type { Tenant } from "../types/domains.js";
 
-function indexName(tenantId: string): string {
-  return `tenant_${tenantId}_documents`;
-}
-
-export async function indexExists(tenantId: string): Promise<boolean> {
-  const response = await client.indices.exists({ index: indexName(tenantId) });
+export async function indexExists(tenant: Tenant): Promise<boolean> {
+  const response = await client.indices.exists({ index: tenant.indexName });
   return response.statusCode === 200;
 }
 
-export async function createTenantIndex(tenantId: string): Promise<void> {
-  const index = indexName(tenantId);
-
-  if (await indexExists(tenantId)) {
-    console.log(`[IndexManager] Index "${index}" already exists — skipping creation.`);
+export async function createTenantIndex(tenant: Tenant): Promise<void> {
+  if (await indexExists(tenant)) {
+    console.log(`[IndexManager] Index "${tenant.indexName}" already exists — skipping creation.`);
     return;
   }
 
   await client.indices.create({
-    index,
+    index: tenant.indexName,
     body: {
       settings: {
         number_of_shards: 1,
@@ -50,26 +45,20 @@ export async function createTenantIndex(tenantId: string): Promise<void> {
     },
   });
 
-  console.log(`[IndexManager] Index "${index}" created.`);
+  console.log(`[IndexManager] Index "${tenant.indexName}" created.`);
 }
 
-export async function deleteTenantIndex(tenantId: string): Promise<void> {
-  const index = indexName(tenantId);
-  if (!(await indexExists(tenantId))) {
-    console.log(`[IndexManager] Index "${index}" does not exist — nothing to delete.`);
+export async function deleteTenantIndex(tenant: Tenant): Promise<void> {
+  if (!(await indexExists(tenant))) {
+    console.log(`[IndexManager] Index "${tenant.indexName}" does not exist — nothing to delete.`);
     return;
   }
-  await client.indices.delete({ index });
-  console.log(`[IndexManager] Index "${index}" deleted.`);
+  await client.indices.delete({ index: tenant.indexName });
+  console.log(`[IndexManager] Index "${tenant.indexName}" deleted.`);
 }
 
 export async function listTenantIndices(): Promise<string[]> {
   const response = await client.cat.indices({ index: 'tenant_*_documents', format: 'json' });
   const rows = response.body as Array<{ index: string }>;
   return rows.map((r) => r.index).sort();
-}
-
-export async function listTenantIds(): Promise<string[]> {
-  const indices = await listTenantIndices();
-  return indices.map((idx) => idx.replace(/^tenant_/, '').replace(/_documents$/, ''));
 }

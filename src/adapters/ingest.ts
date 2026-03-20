@@ -1,11 +1,7 @@
 import { createHash } from "crypto";
 import { client } from "./client.js";
-import type { Document } from "../types/domains.js";
+import type { Document, Tenant } from "../types/domains.js";
 import { validateDocument } from "./transformer.js";
-
-function indexName(tenantId: string): string {
-  return `tenant_${tenantId}_documents`;
-}
 
 // Derive a stable, URL-safe document ID from the document's URL.
 // SHA-1 gives a 40-char hex string; we take the first 16 characters,
@@ -14,27 +10,25 @@ function docIdFromUrl(url: string): string {
   return createHash("sha1").update(url).digest("hex").slice(0, 16);
 }
 
-export async function indexDocument(tenantId: string, doc: Document): Promise<void> {
+export async function indexDocument(tenant: Tenant, doc: Document): Promise<void> {
   const id = docIdFromUrl(doc.url);
   await client.index({
-    index: indexName(tenantId),
+    index: tenant.indexName,
     id,
     body: doc,
   });
 }
 
-export async function deleteDocument(tenantId: string, url: string): Promise<void> {
+export async function deleteDocument(tenant: Tenant, url: string): Promise<void> {
   const id = docIdFromUrl(url);
   await client.delete({
-    index: indexName(tenantId),
+    index: tenant.indexName,
     id
   });
 }
 
-export async function bulkIndexDocuments(tenantId: string, docs: Document[]): Promise<void> {
+export async function bulkIndexDocuments(tenant: Tenant, docs: Document[]): Promise<void> {
   if (docs.length === 0) return;
-
-  const index = indexName(tenantId);
 
   // Validate each document before sending to OpenSearch.
   // Invalid documents are logged and skipped rather than letting OpenSearch reject them.
@@ -56,7 +50,7 @@ export async function bulkIndexDocuments(tenantId: string, docs: Document[]): Pr
   // The bulk API expects alternating action/source lines.
   // Each document needs one { index: { _index, _id } } header followed by the document body.
   const operations = validDocs.flatMap((doc) => [
-    { index: { _index: index, _id: docIdFromUrl(doc.url) } },
+    { index: { _index: tenant.indexName, _id: docIdFromUrl(doc.url) } },
     doc,
   ]);
 
@@ -67,7 +61,7 @@ export async function bulkIndexDocuments(tenantId: string, docs: Document[]): Pr
   };
 
   if (!body.errors) {
-    console.log(`[Ingest] Bulk indexed ${validDocs.length}/${docs.length} documents into "${index}" (${invalidCount} skipped as invalid).`);
+    console.log(`[Ingest] Bulk indexed ${validDocs.length}/${docs.length} documents into "${tenant.indexName}" (${invalidCount} skipped as invalid).`);
     return;
   }
 

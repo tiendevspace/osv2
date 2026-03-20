@@ -3,7 +3,7 @@ import readline from 'node:readline';
 import { crawlUrl } from '../services/crawler.js';
 import { transformPages } from '../adapters/transformer.js';
 import { bulkIndexDocuments } from '../adapters/ingest.js';
-import { createTenantIndex, deleteTenantIndex, listTenantIndices, listTenantIds } from '../adapters/indexManager.js';
+import { createTenantIndex, deleteTenantIndex, listTenantIndices } from '../adapters/indexManager.js';
 import {
   keywordSearch,
   phraseSearch,
@@ -12,7 +12,8 @@ import {
   fuzzySearch,
   queryStringSearch,
 } from '../adapters/search.js';
-import type { SearchResult } from '../types/domains.js';
+import { getAllTenants, getTenant } from '../config/tenants.js';
+import type { SearchResult, Tenant } from '../types/domains.js';
 
 // ---------------------------------------------------------------------------
 // Terminal helpers
@@ -103,17 +104,20 @@ function printIngestSummary(s: {
 // Tenant picker
 // ---------------------------------------------------------------------------
 
-async function askTenant(): Promise<string> {
-  const ids = await listTenantIds();
+async function askTenant(): Promise<Tenant> {
+  const tenants = getAllTenants();
   blank();
-  if (ids.length === 0) {
-    print(`  ${DIM}No tenant indices found. Ingest some pages first.${RESET}`);
-  } else {
-    print(`  ${MAGENTA}${BOLD}Available tenants${RESET}`);
-    for (const id of ids) print(`  ${WHITE}•${RESET} ${id}`);
+  print(`  ${MAGENTA}${BOLD}Configured tenants${RESET}`);
+  for (const t of tenants) {
+    print(`  ${WHITE}•${RESET} ${t.id}  ${DIM}${t.name}${RESET}`);
   }
   blank();
-  return askRequired(`${YELLOW}Tenant ID${RESET}: `);
+  while (true) {
+    const id = await ask(`${YELLOW}Tenant ID${RESET}: `);
+    const tenant = getTenant(id);
+    if (tenant) return tenant;
+    print(`${RED}  Unknown tenant: "${id}"${RESET}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -122,10 +126,10 @@ async function askTenant(): Promise<string> {
 
 async function actionIngest(): Promise<void> {
   blank();
-  const tenant = await askRequired(`${YELLOW}Tenant ID${RESET}: `);
-  const url    = await askRequired(`${YELLOW}URL to crawl${RESET}: `);
+  const tenant = await askTenant();
+  const url = tenant.sourceUrl;
 
-  const summary = { tenant, url, pagesCrawled: 0, documentsIndexed: 0, errors: [] as string[] };
+  const summary = { tenant: tenant.id, url, pagesCrawled: 0, documentsIndexed: 0, errors: [] as string[] };
 
   blank();
   print(`  ${DIM}Crawling…${RESET}`);
@@ -140,7 +144,7 @@ async function actionIngest(): Promise<void> {
   }
 
   // Pages with no title or body are silently dropped — they carry no searchable content.
-  const documents = transformPages(rawPages, tenant);
+  const documents = transformPages(rawPages, tenant.id);
 
   print(`  ${DIM}Indexing…${RESET}`);
   try {
@@ -155,10 +159,10 @@ async function actionIngest(): Promise<void> {
 
 async function actionReindex(): Promise<void> {
   blank();
-  const tenant = await askRequired(`${YELLOW}Tenant ID${RESET}: `);
-  const url    = await askRequired(`${YELLOW}URL to crawl${RESET}: `);
+  const tenant = await askTenant();
+  const url = tenant.sourceUrl;
 
-  const summary = { tenant, url, pagesCrawled: 0, documentsIndexed: 0, errors: [] as string[] };
+  const summary = { tenant: tenant.id, url, pagesCrawled: 0, documentsIndexed: 0, errors: [] as string[] };
 
   blank();
   print(`  ${DIM}Deleting existing index…${RESET}`);
@@ -190,7 +194,7 @@ async function actionReindex(): Promise<void> {
     return;
   }
 
-  const documents = transformPages(rawPages, tenant);
+  const documents = transformPages(rawPages, tenant.id);
 
   print(`  ${DIM}Indexing…${RESET}`);
   try {
@@ -248,7 +252,7 @@ async function actionQueryStringSearch(): Promise<void> {
 
 async function actionIndexCreate(): Promise<void> {
   blank();
-  const tenant = await askRequired(`${YELLOW}Tenant ID${RESET}: `);
+  const tenant = await askTenant();
   await createTenantIndex(tenant);
 }
 

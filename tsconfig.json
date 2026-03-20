@@ -5,6 +5,8 @@
     "module": "NodeNext",        // Use Node's native ESM resolution (honours package.json "exports" and .mjs/.cjs extensions)
     "moduleResolution": "NodeNext", // Pair with module:NodeNext — required for correct import specifier resolution
 
+
+    
     // --- Output ---
     "outDir": "dist",            // Compiled JS lands in dist/, keeping src/ clean
     "declaration": true,         // Emit .d.ts files so the library is consumable by other TS projects
