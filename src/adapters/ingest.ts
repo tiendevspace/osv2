@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { client } from "./client.js";
 import type { Document } from "../types/domains.js";
+import { validateDocument } from "./transformer.js";
 
 function indexName(tenantId: string): string {
   return `tenant_${tenantId}_documents`;
@@ -35,9 +36,26 @@ export async function bulkIndexDocuments(tenantId: string, docs: Document[]): Pr
 
   const index = indexName(tenantId);
 
+  // Validate each document before sending to OpenSearch.
+  // Invalid documents are logged and skipped rather than letting OpenSearch reject them.
+  let invalidCount = 0;
+  const validDocs = docs.filter((doc) => {
+    const { valid, errors } = validateDocument(doc);
+    if (!valid) {
+      invalidCount++;
+      console.warn(`[Ingest] Skipping invalid document "${doc.url}": ${errors.join('; ')}`);
+    }
+    return valid;
+  });
+
+  if (validDocs.length === 0) {
+    console.warn(`[Ingest] All ${docs.length} documents failed validation — nothing to index.`);
+    return;
+  }
+
   // The bulk API expects alternating action/source lines.
   // Each document needs one { index: { _index, _id } } header followed by the document body.
-  const operations = docs.flatMap((doc) => [
+  const operations = validDocs.flatMap((doc) => [
     { index: { _index: index, _id: docIdFromUrl(doc.url) } },
     doc,
   ]);
@@ -49,7 +67,7 @@ export async function bulkIndexDocuments(tenantId: string, docs: Document[]): Pr
   };
 
   if (!body.errors) {
-    console.log(`[Ingest] Bulk indexed ${docs.length}/${docs.length} documents into "${index}".`);
+    console.log(`[Ingest] Bulk indexed ${validDocs.length}/${docs.length} documents into "${index}" (${invalidCount} skipped as invalid).`);
     return;
   }
 
@@ -67,5 +85,5 @@ export async function bulkIndexDocuments(tenantId: string, docs: Document[]): Pr
     }
   }
 
-  console.log(`[Ingest] Bulk index complete — succeeded: ${succeeded}, failed: ${failed}.`);
+  console.log(`[Ingest] Bulk index complete — succeeded: ${succeeded}, failed: ${failed}, skipped (invalid): ${invalidCount}.`);
 }

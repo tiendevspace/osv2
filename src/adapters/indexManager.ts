@@ -52,3 +52,24 @@ export async function createTenantIndex(tenantId: string): Promise<void> {
 
   console.log(`[IndexManager] Index "${index}" created.`);
 }
+
+export async function deleteTenantIndex(tenantId: string): Promise<void> {
+  const index = indexName(tenantId);
+  if (!(await indexExists(tenantId))) {
+    console.log(`[IndexManager] Index "${index}" does not exist — nothing to delete.`);
+    return;
+  }
+  await client.indices.delete({ index });
+  console.log(`[IndexManager] Index "${index}" deleted.`);
+}
+
+export async function listTenantIndices(): Promise<string[]> {
+  const response = await client.cat.indices({ index: 'tenant_*_documents', format: 'json' });
+  const rows = response.body as Array<{ index: string }>;
+  return rows.map((r) => r.index).sort();
+}
+
+export async function listTenantIds(): Promise<string[]> {
+  const indices = await listTenantIndices();
+  return indices.map((idx) => idx.replace(/^tenant_/, '').replace(/_documents$/, ''));
+}

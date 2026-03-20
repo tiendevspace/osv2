@@ -161,7 +161,7 @@ services/  →  adapters/  →  @opensearch-project/opensearch
 | `src/queries/fuzzy.ts` | Query builder: `buildFuzzyQuery()` |
 | `src/queries/queryString.ts` | Query builder: `buildQueryStringQuery()` |
 | `src/services/crawler.ts` | Web crawler service: `crawlUrl(startUrl)` — crawls a URL and its same-domain links to depth 2, returns `RawPage[]` |
-| `src/adapters/transformer.ts` | Page transformer: `transformPage()`, `transformPages()` — converts `RawPage[]` to `Document[]` for a given tenant |
+| `src/adapters/transformer.ts` | Page transformer: `transformPage()`, `transformPages()` — converts `RawPage[]` to `Document[]` for a given tenant; normalises whitespace before slicing body |
 | `src/scripts/ingest.ts` | CLI ingest pipeline: crawl → transform → bulk index, with summary logging |
 | `src/index.ts` | Entry point — crawls `https://crawler-test.com` and prints `RawPage[]` as JSON |
 | `.env.example` | Documents the three required environment variables |
@@ -269,6 +269,16 @@ Only defined values are included in the `metadata` object (conditional spread). 
 ### MemoryStorage
 
 By default Crawlee writes a `storage/` directory to disk (request queues, datasets). `crawlUrl` is a library function that should have no filesystem side-effects, so `MemoryStorage` from `@crawlee/memory-storage` is passed as the storage provider via a `Configuration` instance. The crawl runs entirely in memory and no files are written.
+
+### Body normalisation
+
+Before the body is sliced to `BODY_MAX_LENGTH`, it is passed through `normaliseBody`, which:
+
+1. Replaces all newline sequences (`\r\n`, `\r`, `\n`) with a single space — Cheerio's `.text()` preserves newlines from the HTML source, leaving `\n` noise in the assembled string.
+2. Collapses runs of two or more spaces or tab characters to a single space.
+3. Trims leading and trailing whitespace.
+
+Normalisation happens **before** slicing so the 10,000-character limit always applies to clean text, not text padded with newline characters.
 
 ### Why RawPage is separate from Document
 
@@ -463,6 +473,45 @@ Calls `client.search()` against `tenant_{tenantId}_documents`, extracts the `hit
 ```ts
 { id: hit._id, title: hit._source.title, url: hit._source.url, score: hit._score }
 ```
+
+---
+
+## CLI (`src/scripts/cli.ts`)
+
+### Purpose
+
+An interactive terminal interface for ingestion and index management. Run it with:
+
+```
+npm run cli
+```
+
+The CLI clears the screen, renders a coloured banner and a section-grouped menu, then prompts for each required value in turn — no flags needed.
+
+### Menu options
+
+| Key | Section | Action | Prompts |
+|---|---|---|---|
+| `1` | Ingest | Ingest pages | tenant, URL |
+| `2` | Search | Keyword search | tenant, term |
+| `3` | Search | Phrase search | tenant, field, phrase |
+| `4` | Search | Prefix search | tenant, field, prefix |
+| `5` | Search | Wildcard search | tenant, field, pattern |
+| `6` | Search | Fuzzy search | tenant, field, term, fuzziness (optional, default `AUTO`) |
+| `7` | Search | Query string search | tenant, query expression, fields (optional, default `title,body`) |
+| `8` | Index | Create index | tenant |
+| `9` | Index | List indices | — |
+| `q` | — | Exit | — |
+
+### Design notes
+
+- Uses Node's built-in `node:readline` (callback style) with a manual `ask()` Promise wrapper — no external dependency.
+- **`askRequired`** re-prompts until a non-empty value is entered, preventing silent failures from blank input.
+- Optional prompts (fuzziness, query-string fields) fall back to sensible defaults when left blank.
+- `banner()` calls `console.clear()` and is called on startup and after every "Press Enter to continue…" pause, keeping the display clean.
+- Each action is wrapped in try/catch in the main loop; errors are displayed inline without crashing the process.
+- The `MenuItem` interface with a `section` field drives section headers in `printMenu()`, keeping the menu structure declarative.
+- `listTenantIndices` in `indexManager.ts` queries `tenant_*_documents` via `cat.indices` and returns sorted index names.
 
 ---
 

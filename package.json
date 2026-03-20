@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
+    "cli": "tsx src/scripts/cli.ts",
     "ingest": "tsx src/scripts/ingest.ts",
     "typecheck": "tsc --noEmit"
   },

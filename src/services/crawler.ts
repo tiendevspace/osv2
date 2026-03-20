@@ -2,6 +2,13 @@ import { CheerioCrawler, Configuration, EnqueueStrategy } from 'crawlee';
 import { MemoryStorage } from '@crawlee/memory-storage';
 import type { RawPage } from '../types/domains.js';
 
+const BODY_TEXT = ['p', 'li', 'span', 'div', 'h4', 'h5', 'h6'];
+const BODY_NOISE = [
+    'script', 'style', 'noscript', 'header', 'footer', 'nav', 'aside', 
+    '.breadcrumb', '.breadcrumbs', '.cookie-consent', '.cookie-consent-banner', 
+    '.cookie-consent-notice', '.cookie-consent-popup', '.cookie-consent-message', 
+    '.cookie-consent-container'];
+
 export async function crawlUrl(startUrl: string): Promise<RawPage[]> {
   const results: RawPage[] = [];
 
@@ -12,7 +19,12 @@ export async function crawlUrl(startUrl: string): Promise<RawPage[]> {
       maxCrawlDepth: 2,
       async requestHandler({ request, $, enqueueLinks }) {
         const title = $('title').text().trim();
-        const body = $('p')
+
+        /**
+         * This is important
+         */
+        const body = $(BODY_TEXT.join(','))
+          .not(BODY_NOISE.join(','))
           .toArray()
           .map((el) => $(el).text().trim())
           .filter((text) => text.length > 0)
