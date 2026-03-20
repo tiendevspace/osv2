@@ -17,6 +17,10 @@ interface SearchHit {
   _source: {
     title: string;
     url: string;
+    metadata?: {
+      description?: string;
+      published_at?: string;
+    };
   };
 }
 
@@ -42,6 +46,12 @@ async function executeSearch(
     title: hit._source.title,
     url: hit._source.url,
     score: hit._score,
+    ...(hit._source.metadata !== undefined && {
+      metadata: {
+        ...(hit._source.metadata.description  !== undefined && { description:  hit._source.metadata.description }),
+        ...(hit._source.metadata.published_at !== undefined && { published_at: hit._source.metadata.published_at }),
+      },
+    }),
   }));
 }
 

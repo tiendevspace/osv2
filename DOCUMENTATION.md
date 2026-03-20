@@ -161,9 +161,11 @@ services/  →  adapters/  →  @opensearch-project/opensearch
 | `src/queries/fuzzy.ts` | Query builder: `buildFuzzyQuery()` |
 | `src/queries/queryString.ts` | Query builder: `buildQueryStringQuery()` |
 | `src/services/crawler.ts` | Web crawler service: `crawlUrl(startUrl)` — crawls a URL and its same-domain links to depth 2, returns `RawPage[]` |
+| `src/adapters/transformer.ts` | Page transformer: `transformPage()`, `transformPages()` — converts `RawPage[]` to `Document[]` for a given tenant |
+| `src/scripts/ingest.ts` | CLI ingest pipeline: crawl → transform → bulk index, with summary logging |
 | `src/index.ts` | Entry point — crawls `https://crawler-test.com` and prints `RawPage[]` as JSON |
 | `.env.example` | Documents the three required environment variables |
-| `package.json` | Dependencies and npm scripts |
+| `package.json` | Dependencies and npm scripts (`build`, `dev`, `ingest`, `typecheck`) |
 | `tsconfig.json` | TypeScript compiler configuration |
 | `DECISIONS.md` | Records non-obvious architectural choices |
 | `CLAUDE.md` | Conventions reference for future sessions |
@@ -184,18 +186,44 @@ services/  →  adapters/  →  @opensearch-project/opensearch
 
 ## Domain types (`src/types/domains.ts`)
 
-`domains.ts` now defines four business types:
+`domains.ts` defines four business types. Page metadata is grouped under a dedicated `PageMetadata` interface and attached to `RawPage`, `Document`, and `SearchResult` as an optional `metadata` sub-object.
 
-```ts
-interface Tenant      { id: string; name: string }
-interface Document    { title: string; body: string; url: string; created_at: string; tenant_id: string }
-interface SearchResult { id: string; title: string; url: string; score: number }
-interface RawPage     { url: string; title: string; body: string; crawled_at: string }
-```
+### `PageMetadata`
 
-`Document` mirrors the fields stored in OpenSearch but is expressed purely as a TypeScript shape — it has no knowledge of how OpenSearch maps or analyses those fields. Services and callers work with `Document`; the adapter layer handles the translation to/from wire format.
+All fields extracted from HTML meta tags and document structure. Every field is optional because not every page publishes every tag.
 
-`RawPage` is raw crawler output — what the HTTP layer extracted. It is deliberately separate from `Document`: it carries no tenant ownership or search-layer concepts. The ingestion layer is responsible for transforming `RawPage → Document` when OpenSearch integration is added.
+| Field | Type | Source |
+|---|---|---|
+| `description?` | `string` | `meta[name=description]` → `meta[property=og:description]` |
+| `lang?` | `string` | `html[lang]` |
+| `canonical_url?` | `string` | `link[rel=canonical][href]` |
+| `author?` | `string` | `meta[name=author]` |
+| `published_at?` | `string` | `meta[property=article:published_time]` → `meta[name=date]` |
+| `modified_at?` | `string` | `meta[property=article:modified_time]` → `meta[name=last-modified]` |
+| `og_image?` | `string` | `meta[property=og:image]` |
+| `og_type?` | `string` | `meta[property=og:type]` |
+| `keywords?` | `string[]` | `meta[name=keywords]`, split on `,` |
+| `headings?` | `string[]` | `h1, h2, h3` text in document order |
+
+### `RawPage`
+
+Raw crawler output. Core fields plus an optional `metadata?: PageMetadata` sub-object. The `metadata` key is absent entirely when no metadata fields are present on a page.
+
+| Field | Type | Source |
+|---|---|---|
+| `url` | `string` | Request URL |
+| `title` | `string` | `<title>` |
+| `body` | `string` | Concatenated `<p>` text |
+| `crawled_at` | `string` | ISO 8601 timestamp set at crawl time |
+| `metadata?` | `PageMetadata` | Optional sub-object of all extracted metadata |
+
+### `Document`
+
+Mirrors `RawPage` but adds `tenant_id` and renames `crawled_at` → `created_at`. The `metadata` sub-object passes through as-is from `RawPage`.
+
+### `SearchResult`
+
+Returned by search adapters. Carries `metadata?: Pick<PageMetadata, 'description' | 'published_at'>` — only the two fields needed for display (snippet and recency indicator).
 
 `created_at` and `crawled_at` are both typed as `string` (ISO 8601) because JSON has no native date type.
 
@@ -222,6 +250,21 @@ Depth 0 is the start URL. Depth 1 is every link found on it. Depth 2 is every li
 ### Same-domain restriction
 
 `EnqueueStrategy.SameDomain` in the `enqueueLinks()` call restricts followed links to URLs sharing the same registered domain as `startUrl`. Links to external sites are ignored. This prevents the crawl from escaping to the wider web.
+
+### Metadata extraction
+
+After extracting `title` and `body`, the `requestHandler` also extracts all metadata fields defined on `RawPage`. A local helper `attr(selector, attribute)` wraps Cheerio's `.attr()` with a trim and empty-string guard, returning `undefined` when no value is present:
+
+```ts
+function attr(selector: string, attribute: string): string | undefined {
+  const val = $(selector).attr(attribute)?.trim();
+  return val !== '' ? val : undefined;
+}
+```
+
+For fields with multiple possible sources (e.g. `description` from `meta[name=description]` falling back to `meta[property=og:description]`), the nullish coalescing operator (`??`) takes the first non-empty value.
+
+Only defined values are included in the `metadata` object (conditional spread). If no metadata fields are present, the `metadata` key is omitted from the `RawPage` entirely. This satisfies `exactOptionalPropertyTypes: true`, which requires absent optional properties to be truly absent rather than set to `undefined`.
 
 ### MemoryStorage
 
@@ -258,6 +301,25 @@ Each tenant gets its own dedicated index rather than sharing one index with a `t
 - **Instant deletion** — removing a tenant's data is a single `DELETE /tenant_acme_documents` call. In a shared index, `deleteByQuery` is slow and leaves deleted-document tombstones until a segment merge.
 - **Schema flexibility** — different tenants may eventually need different field mappings or analysis chains. Separate indices make per-tenant customisation trivial.
 - **Independent tuning** — shard count, replica count, and index settings can be set per tenant based on their actual data volume.
+
+### Metadata field mappings
+
+Metadata fields are nested under a `metadata` object mapping in OpenSearch. OpenSearch treats a plain object field as an implicit `object` type, so each sub-field is declared under `metadata.properties`:
+
+| Field | OpenSearch type | Rationale |
+|---|---|---|
+| `metadata.description` | `text` | Full-text search + ranking signal |
+| `metadata.lang` | `keyword` | Exact-match filter / facet |
+| `metadata.canonical_url` | `keyword` | Deduplication filter |
+| `metadata.author` | `keyword` | Faceting |
+| `metadata.published_at` | `date` | Date-range filter, recency ranking |
+| `metadata.modified_at` | `date` | Freshness signal |
+| `metadata.og_image` | `keyword` (`index: false`) | Stored but not searched |
+| `metadata.og_type` | `keyword` | Content-type faceting |
+| `metadata.keywords` | `text` | Ranking signal (analysed) |
+| `metadata.headings` | `text` | Structural ranking signal |
+
+Querying a nested field uses dot notation: `metadata.description`, `metadata.published_at`, etc.
 
 ### Mappings: `text` vs `keyword`
 
@@ -401,6 +463,54 @@ Calls `client.search()` against `tenant_{tenantId}_documents`, extracts the `hit
 ```ts
 { id: hit._id, title: hit._source.title, url: hit._source.url, score: hit._score }
 ```
+
+---
+
+## Ingest pipeline (`src/scripts/ingest.ts`)
+
+### Purpose
+
+Wires the crawler, transformer, and bulk-index adapter into a single terminal command:
+
+```
+npm run ingest -- --tenant=demo --url=https://example.com
+```
+
+### How `process.argv` works
+
+Node populates `process.argv` before your script runs. It is always an array of strings:
+
+```
+process.argv[0]  →  '/usr/local/bin/node'   (the Node binary)
+process.argv[1]  →  '/opt/osv2/src/scripts/ingest.ts'  (the script path)
+process.argv[2]  →  '--tenant=demo'
+process.argv[3]  →  '--url=https://example.com'
+```
+
+The script skips the first two entries with `.slice(2)` and parses each remaining argument with a regex that matches the `--key=value` shape. This is the simplest approach that avoids a CLI-parsing dependency. If the number of flags grows, a library like `minimist` or `yargs` would be appropriate.
+
+When you run via `npm run ingest -- --tenant=demo --url=...`, npm passes everything after `--` verbatim to the script as extra arguments, which is how they end up in `process.argv[2]` and beyond.
+
+### Pipeline stages and their error handling
+
+| Stage | Function | Error handling |
+|---|---|---|
+| Validate args | — | `process.exit(1)` immediately if `--tenant` or `--url` is absent — no point starting a crawl without them |
+| Crawl | `crawlUrl(url)` | `try/catch` — a network failure or DNS error throws here; we log it, print the summary (with 0 pages), and exit 1 |
+| Transform | `transformPages(rawPages, tenant)` | No try/catch — this is a pure function over in-memory data; it cannot fail unless there is a bug |
+| Bulk index | `bulkIndexDocuments(tenant, docs)` | `try/catch` — a cluster connection error throws here; per-document failures are already handled inside the adapter and logged individually |
+
+### Why a summary instead of per-document logs
+
+At scale — hundreds or thousands of crawled pages — per-document `console.log` calls would be unreadable in a terminal, would swamp log aggregators (Datadog, CloudWatch), and would make it impossible to see whether the run succeeded at a glance.
+
+A single summary line gives operators the signal they need:
+
+- Did it complete?
+- How many pages were crawled vs indexed (the gap is pages dropped by the transformer)?
+- Were there errors, and how many?
+
+Per-item failure reasons are already logged inside `bulkIndexDocuments` at the point of failure, so the summary does not need to repeat them.
 
 ---
 
