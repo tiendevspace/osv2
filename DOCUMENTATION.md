@@ -171,8 +171,7 @@ services/  →  adapters/  →  @opensearch-project/opensearch
 | `src/queries/fuzzy.ts` | Query builder: `buildFuzzyQuery()` |
 | `src/queries/query-string.ts` | Query builder: `buildQueryStringQuery()` |
 | `src/services/crawler.ts` | Web crawler service: `crawlUrl(startUrl)` — crawls a URL and its same-domain links to depth 2, returns `RawPage[]` |
-| `src/scripts/cli.ts` | Interactive CLI for ingestion, search, and index management |
-| `src/scripts/provision.ts` | Tenant provisioning: derives a tenant ID from a display name, looks up the tenant config, checks for an existing index, prompts for confirmation before overwriting, creates the index with mappings, and prints the applied configuration. Runnable standalone (`npm run provision`) or imported as a module by `cli.ts`. |
+| `src/scripts/cli.ts` | Interactive CLI for ingestion, search, and index management. Includes tenant provisioning: derives a tenant ID from a display name, checks for an existing index, prompts for confirmation before overwriting, creates the index with mappings, and prints the applied configuration. |
 | `src/scripts/test-isolation.ts` | Tenant isolation smoke test: provisions two test indices, ingests fixture documents, asserts cross-tenant search isolation, then tears down |
 | `src/index.ts` | Entry point |
 | `.env.example` | Documents the three required environment variables |

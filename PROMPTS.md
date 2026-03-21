@@ -352,23 +352,17 @@ Explain:
 ```
 I want add a new function to the cli.ts to set up a new tenant from scratch.
 
-The new function will be called called provision.ts. It will:
+The new function will be called called provision. It will:
 
 1. Allow entering a new client name e.g "Melton City Council" and follow the naming convention from CLAUDE.md
 2. Looks up the tenant from the config in tenants.ts
 3. Checks if the index already exists (use indexExists())
-4. If it exists, logs a warning and asks for --force flag to overwrite
+4. If it exists, logs a warning and asks for confirmation to overwrite
 5. Creates the index with the correct mappings
 6. Logs the full tenant configuration that was applied
 
-Also update DECISIONS.md with an entry explaining the index-per-tenant decision:
-- What we decided
-- What the alternative was (shared index with tenant_id filter)
-- Why we chose index-per-tenant
+Also update DECISIONS.md with an entry explaining What we decided
 
-Explain:
-- What idempotency means and why our provision script should be idempotent
-- What the --force flag pattern is and why it protects against accidental overwrites
 ```
 
 ---

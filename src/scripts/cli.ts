@@ -3,7 +3,7 @@ import readline from 'node:readline';
 import { crawlUrl } from '../services/crawler.js';
 import { transformPages } from '../adapters/transformer.js';
 import { bulkIndexDocuments } from '../adapters/ingest.js';
-import { createTenantIndex, deleteTenantIndex, listTenantIndices } from '../adapters/index-manager.js';
+import { createTenantIndex, deleteTenantIndex, indexExists, listTenantIndices } from '../adapters/index-manager.js';
 import { keywordSearch } from '../adapters/keyword-search.js';
 import { phraseSearch } from '../adapters/phrase-search.js';
 import { prefixSearch } from '../adapters/prefix-search.js';
@@ -11,7 +11,6 @@ import { wildcardSearch } from '../adapters/wildcard-search.js';
 import { fuzzySearch } from '../adapters/fuzzy-search.js';
 import { queryStringSearch } from '../adapters/query-string-search.js';
 import { getAllTenants, getTenant } from '../config/tenants.js';
-import { provisionTenant, toTenantId } from './provision.js';
 import type { SearchResult, Tenant } from '../types/domains.js';
 
 // ---------------------------------------------------------------------------
@@ -249,6 +248,13 @@ async function actionQueryStringSearch(): Promise<void> {
   printResults(await queryStringSearch(tenant, query, fields));
 }
 
+function toTenantId(displayName: string): string {
+  return displayName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 async function actionProvision(): Promise<void> {
   blank();
   let displayName = '';
@@ -261,7 +267,52 @@ async function actionProvision(): Promise<void> {
   print(`${DIM}  → Derived ID: ${tenantId}${RESET}`);
   blank();
 
-  await provisionTenant(tenantId, { ask, print, blank });
+  const tenant = getTenant(tenantId);
+  if (!tenant) {
+    print(`${RED}  Tenant "${tenantId}" not found in src/config/tenants.ts.${RESET}`);
+    print(`${DIM}  Add an entry with id: '${tenantId}' there, then re-run provision.${RESET}`);
+    return;
+  }
+
+  const exists = await indexExists(tenant);
+  if (exists) {
+    blank();
+    print(`${YELLOW}  Warning: index "${tenant.indexName}" already exists.${RESET}`);
+    const answer = await ask(`${YELLOW}  Overwrite? All existing documents will be deleted. [y/N]${RESET}: `);
+    if (answer.toLowerCase() !== 'y') {
+      print(`${DIM}  Aborted — index left unchanged.${RESET}`);
+      return;
+    }
+    blank();
+    print(`  ${DIM}Deleting existing index…${RESET}`);
+    await deleteTenantIndex(tenant);
+  }
+
+  print(`  ${DIM}Creating index "${tenant.indexName}"…${RESET}`);
+  await createTenantIndex(tenant);
+
+  blank();
+  print(`  ${BOLD}Tenant configuration applied${RESET}`);
+  print(`  ${DIM}──────────────────────────────${RESET}`);
+  print(`  ID:         ${CYAN}${tenant.id}${RESET}`);
+  print(`  Name:       ${WHITE}${tenant.name}${RESET}`);
+  print(`  Index:      ${WHITE}${tenant.indexName}${RESET}`);
+  print(`  Source URL: ${DIM}${tenant.sourceUrl}${RESET}`);
+
+  if (tenant.fieldWeights) {
+    print(`  Field weights:`);
+    if (tenant.fieldWeights.title !== undefined) {
+      print(`    title:  ${WHITE}${tenant.fieldWeights.title}${RESET}`);
+    }
+    if (tenant.fieldWeights.body !== undefined) {
+      print(`    body:   ${WHITE}${tenant.fieldWeights.body}${RESET}`);
+    }
+  } else {
+    print(`  Field weights: ${DIM}default${RESET}`);
+  }
+
+  blank();
+  print(`  ${GREEN}Index provisioned successfully.${RESET}`);
 }
 
 async function actionIndexCreate(): Promise<void> {
