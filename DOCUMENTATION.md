@@ -171,7 +171,8 @@ services/  →  adapters/  →  @opensearch-project/opensearch
 | `src/queries/fuzzy.ts` | Query builder: `buildFuzzyQuery()` |
 | `src/queries/query-string.ts` | Query builder: `buildQueryStringQuery()` |
 | `src/services/crawler.ts` | Web crawler service: `crawlUrl(startUrl)` — crawls a URL and its same-domain links to depth 2, returns `RawPage[]` |
-| `src/scripts/cli.ts` | Interactive CLI for ingestion and search |
+| `src/scripts/cli.ts` | Interactive CLI for ingestion, search, and index management |
+| `src/scripts/provision.ts` | Tenant provisioning: derives a tenant ID from a display name, looks up the tenant config, checks for an existing index, prompts for confirmation before overwriting, creates the index with mappings, and prints the applied configuration. Runnable standalone (`npm run provision`) or imported as a module by `cli.ts`. |
 | `src/scripts/test-isolation.ts` | Tenant isolation smoke test: provisions two test indices, ingests fixture documents, asserts cross-tenant search isolation, then tears down |
 | `src/index.ts` | Entry point |
 | `.env.example` | Documents the three required environment variables |
@@ -536,8 +537,9 @@ The CLI clears the screen, renders a coloured banner and a section-grouped menu,
 | `5` | Search | Wildcard search | tenant, field, pattern |
 | `6` | Search | Fuzzy search | tenant, field, term, fuzziness (optional, default `AUTO`) |
 | `7` | Search | Query string search | tenant, query expression, fields (optional, default `title,body`) |
-| `8` | Index | Create index | tenant |
-| `9` | Index | List indices | — |
+| `8` | Index | Provision | display name (ID derived automatically) |
+| `9` | Index | Create index | tenant |
+| `10` | Index | List indices | — |
 | `q` | — | Exit | — |
 
 ### Design notes

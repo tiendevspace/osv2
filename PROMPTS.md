@@ -350,18 +350,16 @@ Explain:
 #### Prompt 3.3 — Provisioning Script
 
 ```
-I want a single command to set up a new tenant from scratch.
+I want add a new function to the cli.ts to set up a new tenant from scratch.
 
-In src/scripts/, create a file called provision.ts that:
-1. Accepts a --tenant flag
+The new function will be called called provision.ts. It will:
+
+1. Allow entering a new client name e.g "Melton City Council" and follow the naming convention from CLAUDE.md
 2. Looks up the tenant from the config in tenants.ts
 3. Checks if the index already exists (use indexExists())
 4. If it exists, logs a warning and asks for --force flag to overwrite
 5. Creates the index with the correct mappings
 6. Logs the full tenant configuration that was applied
-
-Add to package.json:
-  "provision": "ts-node src/scripts/provision.ts"
 
 Also update DECISIONS.md with an entry explaining the index-per-tenant decision:
 - What we decided

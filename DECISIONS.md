@@ -74,6 +74,23 @@ Accept the default — Crawlee creates a `storage/` directory at the project roo
 
 ## Decision
 
+Each tenant is given a dedicated OpenSearch index (e.g. `tenant_acme_corp_documents`) rather than sharing one index with a `tenant_id` filter field.
+
+## Alternatives
+
+Store all tenants' documents in a single shared index (e.g. `all_documents`) and filter every search query with a `term` clause on `tenant_id`. This is operationally simpler — one index to manage, no per-tenant provisioning step.
+
+## Rationale
+
+- **Isolation by structure, not by discipline.** With a shared index, a missing `tenant_id` filter in any query silently leaks cross-tenant results. With separate indices, that leakage is structurally impossible — a query against `tenant_acme_corp_documents` cannot return documents from `tenant_opensearch_documents` at the API level.
+- **Instant, clean deletion.** Removing a tenant's data is a single `DELETE /tenant_{id}_documents` call. In a shared index, deletion requires a `deleteByQuery` scan, which is slow, resource-intensive, and leaves tombstoned documents in segment files until the next merge.
+- **Schema flexibility.** Different tenants may need different field mappings (e.g. additional language analysers, per-tenant custom fields). With separate indices, per-tenant schema customisation is straightforward. In a shared index all tenants must share one mapping.
+- **Independent tuning.** Shard count, replica count, and index settings can be set per tenant based on their actual data volume.
+
+---
+
+## Decision
+
 `KeywordQuery` is defined in `src/types/queries.ts` but not used by `buildKeywordQuery` in its current form.
 
 ## Alternatives

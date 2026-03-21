@@ -11,6 +11,7 @@ import { wildcardSearch } from '../adapters/wildcard-search.js';
 import { fuzzySearch } from '../adapters/fuzzy-search.js';
 import { queryStringSearch } from '../adapters/query-string-search.js';
 import { getAllTenants, getTenant } from '../config/tenants.js';
+import { provisionTenant, toTenantId } from './provision.js';
 import type { SearchResult, Tenant } from '../types/domains.js';
 
 // ---------------------------------------------------------------------------
@@ -248,6 +249,21 @@ async function actionQueryStringSearch(): Promise<void> {
   printResults(await queryStringSearch(tenant, query, fields));
 }
 
+async function actionProvision(): Promise<void> {
+  blank();
+  let displayName = '';
+  while (!displayName) {
+    displayName = await ask(`${YELLOW}Tenant display name${RESET} ${DIM}(e.g. "Melton City Council")${RESET}: `);
+    if (!displayName) print(`${RED}  This field is required.${RESET}`);
+  }
+
+  const tenantId = toTenantId(displayName);
+  print(`${DIM}  → Derived ID: ${tenantId}${RESET}`);
+  blank();
+
+  await provisionTenant(tenantId, { ask, print, blank });
+}
+
 async function actionIndexCreate(): Promise<void> {
   blank();
   const tenant = await askTenant();
@@ -294,8 +310,9 @@ const SEARCH_MENU: MenuItem[] = [
 const MAIN_MENU: MenuItem[] = [
   { key: '1', label: 'Ingest',        section: 'Ingest', action: actionIngestMenu },
   { key: '2', label: 'Search',        section: 'Search', action: actionSearchMenu },
-  { key: '3', label: 'Create index',  section: 'Index',  action: actionIndexCreate },
-  { key: '4', label: 'List indices',  section: 'Index',  action: actionIndexList },
+  { key: '3', label: 'Provision',     section: 'Index',  action: actionProvision },
+  { key: '4', label: 'Create index',  section: 'Index',  action: actionIndexCreate },
+  { key: '5', label: 'List indices',  section: 'Index',  action: actionIndexList },
 ];
 
 function printMenuItems(items: MenuItem[]): void {
