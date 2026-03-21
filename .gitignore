@@ -4,7 +4,7 @@
 # We never track the heavy machinery. Your package.json is the blueprint, 
 # and running 'npm install' builds this folder wherever it is needed.
 node_modules/
-
+data
 # ----------------------------------------------------------------------
 # 🏭 THE FACTORY OUTPUT (Compiled Code)
 # ----------------------------------------------------------------------

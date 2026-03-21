@@ -17,6 +17,12 @@ const TENANTS: Tenant[] = [
       body: 1,
     },
   },
+  {
+    id: 'acme_corp',
+    name: 'Acme Corp',
+    sourceUrl: 'https://www.acme.com',
+    indexName: 'ecommerce'
+  }
 ];
 
 export function getAllTenants(): Tenant[] {

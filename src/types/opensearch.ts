@@ -18,3 +18,24 @@ export interface ClusterHealthResponse {
   initializing_shards: number;
   unassigned_shards: number;
 }
+
+// Wire-level shape of a single hit returned by the Search API.
+export interface SearchHit {
+  _id: string;
+  _score: number;
+  _source: {
+    title: string;
+    url: string;
+    metadata?: {
+      description?: string;
+      published_at?: string;
+    };
+  };
+}
+
+// Wire-level shape of the Search API response body.
+export interface SearchResponse {
+  hits: {
+    hits: SearchHit[];
+  };
+}

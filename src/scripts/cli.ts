@@ -3,15 +3,13 @@ import readline from 'node:readline';
 import { crawlUrl } from '../services/crawler.js';
 import { transformPages } from '../adapters/transformer.js';
 import { bulkIndexDocuments } from '../adapters/ingest.js';
-import { createTenantIndex, deleteTenantIndex, listTenantIndices } from '../adapters/indexManager.js';
-import {
-  keywordSearch,
-  phraseSearch,
-  prefixSearch,
-  wildcardSearch,
-  fuzzySearch,
-  queryStringSearch,
-} from '../adapters/search.js';
+import { createTenantIndex, deleteTenantIndex, listTenantIndices } from '../adapters/index-manager.js';
+import { keywordSearch } from '../adapters/keyword-search.js';
+import { phraseSearch } from '../adapters/phrase-search.js';
+import { prefixSearch } from '../adapters/prefix-search.js';
+import { wildcardSearch } from '../adapters/wildcard-search.js';
+import { fuzzySearch } from '../adapters/fuzzy-search.js';
+import { queryStringSearch } from '../adapters/query-string-search.js';
 import { getAllTenants, getTenant } from '../config/tenants.js';
 import type { SearchResult, Tenant } from '../types/domains.js';
 

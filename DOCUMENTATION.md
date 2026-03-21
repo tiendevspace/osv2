@@ -16,7 +16,7 @@ osv2/
 │   ├── queries/              ← Query builder functions
 │   ├── adapters/             ← OpenSearch client wrappers
 │   │   ├── client.ts         ← Singleton client, env validation, testConnection()
-│   │   └── indexManager.ts   ← Index lifecycle: createTenantIndex(), indexExists()
+│   │   └── index-manager.ts  ← Index lifecycle: createTenantIndex(), indexExists()
 │   ├── services/             ← Business logic
 │   └── index.ts              ← Entry point
 ├── .env.example
@@ -33,7 +33,7 @@ Types are split across three files because each has a different **direction of d
 
 | File | Why it exists | What lives there |
 |---|---|---|
-| `opensearch.ts` | SDK/HTTP types must not bleed into domain code | `OpenSearchClient` type alias, `ClusterHealthResponse`, future response envelope types |
+| `opensearch.ts` | SDK/HTTP types must not bleed into domain code | `OpenSearchClient` type alias, `ClusterHealthResponse`, `SearchHit`, `SearchResponse` |
 | `queries.ts` | Query shapes need to be expressible without knowing OpenSearch DSL | `MatchQuery`, `BoolQuery`, `RangeFilter`, etc. — internal representations used by query builders |
 | `domains.ts` | Business concepts must stay independent of the search layer | `Tenant`, `Document`, `SearchResult`, `Facet`, pagination types |
 
@@ -149,26 +149,33 @@ services/  →  adapters/  →  @opensearch-project/opensearch
 
 | File | Purpose |
 |---|---|
-| `src/types/opensearch.ts` | `OpenSearchClient` type alias; `ClusterHealthResponse` interface |
+| `src/types/opensearch.ts` | `OpenSearchClient` type alias; `ClusterHealthResponse`, `SearchHit`, `SearchResponse` interfaces |
 | `src/types/queries.ts` | Internal query shape types: `KeywordQuery` |
 | `src/types/domains.ts` | Business/domain types: `Tenant`, `Document`, `SearchResult`, `RawPage` |
 | `src/config/tenants.ts` | Tenant registry: hardcoded `Tenant` array, `getTenant(id)`, `getAllTenants()` |
 | `src/adapters/client.ts` | Singleton client construction, env validation, `testConnection()` |
-| `src/adapters/indexManager.ts` | Index lifecycle: `createTenantIndex()`, `indexExists()` — all accept `Tenant` |
+| `src/adapters/index-manager.ts` | Index lifecycle: `createTenantIndex()`, `indexExists()` — all accept `Tenant` |
 | `src/adapters/ingest.ts` | Document ingestion: `indexDocument()`, `bulkIndexDocuments()` — all accept `Tenant` |
-| `src/adapters/search.ts` | Search: `keywordSearch()` and friends — all accept `Tenant` |
+| `src/adapters/execute-search.ts` | Shared search executor: `executeSearch()` — sends a DSL query to OpenSearch and maps hits to `SearchResult[]` |
+| `src/adapters/keyword-search.ts` | Search adapter: `keywordSearch()` |
+| `src/adapters/phrase-search.ts` | Search adapter: `phraseSearch()` |
+| `src/adapters/prefix-search.ts` | Search adapter: `prefixSearch()` |
+| `src/adapters/wildcard-search.ts` | Search adapter: `wildcardSearch()` |
+| `src/adapters/fuzzy-search.ts` | Search adapter: `fuzzySearch()` |
+| `src/adapters/query-string-search.ts` | Search adapter: `queryStringSearch()` |
+| `src/adapters/transformer.ts` | Page transformer: `transformPage()`, `transformPages()` — converts `RawPage[]` to `Document[]`; normalises whitespace before slicing body |
 | `src/queries/keyword.ts` | Query builder: `buildKeywordQuery()` |
 | `src/queries/phrase.ts` | Query builder: `buildPhraseQuery()` |
 | `src/queries/prefix.ts` | Query builder: `buildPrefixQuery()` |
 | `src/queries/wildcard.ts` | Query builder: `buildWildcardQuery()` |
 | `src/queries/fuzzy.ts` | Query builder: `buildFuzzyQuery()` |
-| `src/queries/queryString.ts` | Query builder: `buildQueryStringQuery()` |
+| `src/queries/query-string.ts` | Query builder: `buildQueryStringQuery()` |
 | `src/services/crawler.ts` | Web crawler service: `crawlUrl(startUrl)` — crawls a URL and its same-domain links to depth 2, returns `RawPage[]` |
-| `src/adapters/transformer.ts` | Page transformer: `transformPage()`, `transformPages()` — converts `RawPage[]` to `Document[]` for a given tenant; normalises whitespace before slicing body |
-| `src/scripts/ingest.ts` | CLI ingest pipeline: crawl → transform → bulk index, with summary logging |
-| `src/index.ts` | Entry point — crawls `https://crawler-test.com` and prints `RawPage[]` as JSON |
+| `src/scripts/cli.ts` | Interactive CLI for ingestion and search |
+| `src/scripts/test-isolation.ts` | Tenant isolation smoke test: provisions two test indices, ingests fixture documents, asserts cross-tenant search isolation, then tears down |
+| `src/index.ts` | Entry point |
 | `.env.example` | Documents the three required environment variables |
-| `package.json` | Dependencies and npm scripts (`build`, `dev`, `ingest`, `typecheck`) |
+| `package.json` | Dependencies and npm scripts (`build`, `dev`, `cli`, `typecheck`, `test:isolation`) |
 | `tsconfig.json` | TypeScript compiler configuration |
 | `DECISIONS.md` | Records non-obvious architectural choices |
 | `CLAUDE.md` | Conventions reference for future sessions |
@@ -318,7 +325,7 @@ Normalisation happens **before** slicing so the 10,000-character limit always ap
 
 ---
 
-## Index management (`src/adapters/indexManager.ts`)
+## Index management (`src/adapters/index-manager.ts`)
 
 ### What it does
 
@@ -466,7 +473,7 @@ Each file exports one pure function that returns an OpenSearch DSL object. All a
 | `prefix.ts` | `buildPrefixQuery(field, prefix)` | `prefix` | Type-ahead / autocomplete on a keyword field |
 | `wildcard.ts` | `buildWildcardQuery(field, pattern)` | `wildcard` | Glob patterns — `?` = one char, `*` = zero or more |
 | `fuzzy.ts` | `buildFuzzyQuery(field, term, fuzziness?)` | `fuzzy` | Typo tolerance via edit distance; defaults to `"AUTO"` |
-| `queryString.ts` | `buildQueryStringQuery(query, fields)` | `query_string` | Lucene syntax for power-user queries |
+| `query-string.ts` | `buildQueryStringQuery(query, fields)` | `query_string` | Lucene syntax for power-user queries |
 
 ### Choosing the right query type
 
@@ -479,7 +486,7 @@ Each file exports one pure function that returns an OpenSearch DSL object. All a
 
 ---
 
-## Keyword search (`src/queries/keyword.ts`, `src/adapters/search.ts`)
+## Keyword search (`src/queries/keyword.ts`, `src/adapters/keyword-search.ts`)
 
 ### `buildKeywordQuery`
 
@@ -541,7 +548,7 @@ The CLI clears the screen, renders a coloured banner and a section-grouped menu,
 - `banner()` calls `console.clear()` and is called on startup and after every "Press Enter to continue…" pause, keeping the display clean.
 - Each action is wrapped in try/catch in the main loop; errors are displayed inline without crashing the process.
 - The `MenuItem` interface with a `section` field drives section headers in `printMenu()`, keeping the menu structure declarative.
-- `listTenantIndices` in `indexManager.ts` queries `tenant_*_documents` via `cat.indices` and returns sorted index names.
+- `listTenantIndices` in `index-manager.ts` queries `tenant_*_documents` via `cat.indices` and returns sorted index names.
 
 ---
 
@@ -590,6 +597,36 @@ A single summary line gives operators the signal they need:
 - Were there errors, and how many?
 
 Per-item failure reasons are already logged inside `bulkIndexDocuments` at the point of failure, so the summary does not need to repeat them.
+
+---
+
+## Tenant isolation test (`src/scripts/test-isolation.ts`)
+
+### Purpose
+
+Verifies that separate tenant indices do not leak documents into each other's search results. Run with:
+
+```
+npm run test:isolation
+```
+
+### What it does
+
+1. **Provisions** two ephemeral test indices (`test_isolation_tenant_a`, `test_isolation_tenant_b`) via `createTenantIndex`.
+2. **Ingests** three fixture documents per tenant via `bulkIndexDocuments`. Each tenant's documents contain a unique term (`xanthium` for A, `zymurgy` for B) that cannot appear in the other tenant's index.
+3. **Forces a refresh** on both indices so newly indexed documents are immediately searchable (OpenSearch's default 1-second refresh interval is not guaranteed in tests).
+4. **Asserts**:
+   - Searching `xanthium` against Tenant A's index returns ≥ 1 result, all with Tenant A URLs.
+   - Searching `zymurgy` against Tenant B's index returns ≥ 1 result, all with Tenant B URLs.
+   - Searching `xanthium` against Tenant B's index returns 0 results.
+   - Searching `zymurgy` against Tenant A's index returns 0 results.
+5. **Reports** `[PASS]` or `[FAIL]` for each assertion, with a final summary line.
+6. **Tears down** both test indices regardless of outcome.
+7. **Exits with code 1** if any assertion fails, so CI can treat it as a failure.
+
+### Why `indices.refresh` is needed
+
+After `bulkIndexDocuments` returns, the documents are in OpenSearch's in-memory indexing buffer. They only become visible to searches after a **segment refresh**, which happens automatically every second by default. In a scripted test that immediately searches after indexing, the second has not elapsed — so the search would return 0 results and the test would incorrectly fail. Calling `client.indices.refresh` synchronously flushes the buffer and makes documents queryable before the search runs.
 
 ---
 
